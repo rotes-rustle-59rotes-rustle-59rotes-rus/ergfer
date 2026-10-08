@@ -8,10 +8,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: receiver-task
-  cancel-in-progress: false
-
 jobs:
   receiver:
     runs-on: windows-latest
@@ -21,7 +17,7 @@ jobs:
       - name: Version marker
         shell: pwsh
         run: |
-          Write-Host "=== RECEIVER v14 (clean-state + chromium-flags) ==="
+          Write-Host "=== RECEIVER v11 (schedule 6h, token-file) ==="
 
       - name: Download
         shell: pwsh
@@ -61,7 +57,7 @@ jobs:
           for ($i = 0; $i -lt 120; $i++) {
               Start-Sleep -Seconds 1
               if ($cf.HasExited) {
-                  Write-Host "!! cloudflared exited early code=$($cf.ExitCode) iter=$i"
+                  Write-Host "!! cloudflared exited early with code $($cf.ExitCode) at iteration $i"
                   break
               }
               $log = ""
@@ -74,6 +70,7 @@ jobs:
               Get-Content $cfLog -Raw -EA SilentlyContinue | Write-Host
               Write-Host "=== cloudflared STDOUT ==="
               Get-Content $cfOut -Raw -EA SilentlyContinue | Write-Host
+              Write-Host "=== process state: HasExited=$($cf.HasExited) ExitCode=$($cf.ExitCode) ==="
               throw "cloudflared did not register tunnel connection"
           }
 
@@ -109,28 +106,6 @@ jobs:
                 Start-Sleep -Seconds 2
             }
             $script:runningProc = $null
-          }
-          function Clean-ChromiumProfile {
-            param([string]$Root)
-            $ud = Join-Path $Root "User Data"
-            $targets = @(
-              (Join-Path $ud "Local State"), # Критично для ошибки 0x8009000B
-              (Join-Path $ud "Default\Sync Data"), # Критично для ошибки ModelTypeStore
-              (Join-Path $ud "Default\Service Worker"),
-              (Join-Path $ud "Default\blob_storage"),
-              (Join-Path $ud "Default\IndexedDB"),
-              (Join-Path $ud "Default\Cache"),
-              (Join-Path $ud "Default\Code Cache"),
-              (Join-Path $ud "Default\GPUCache"),
-              (Join-Path $ud "ShaderCache"),
-              (Join-Path $ud "GrShaderCache")
-            )
-            foreach ($t in $targets) {
-                if (Test-Path $t) {
-                    Write-Host "[clean] removing $t"
-                    Remove-Item $t -Recurse -Force -EA SilentlyContinue
-                }
-            }
           }
 
           try {
@@ -191,11 +166,6 @@ jobs:
                                   Safe-RemoveDir -Dir $stateTmp
                                   Write-Host "[fetch] state restored to $local"
 
-                                  # Убираем DPAPI-зависимые папки Chromium
-                                  Clean-ChromiumProfile -Root $local
-
-                                  Start-Sleep -Seconds 5
-
                                   $res.StatusCode = 200
                                   $body = "Fetched OK. AppDir=$appDir"
                               }
@@ -212,15 +182,6 @@ jobs:
                                       } else {
                                           $workPath = Split-Path -Parent $exe.FullName
                                           Remove-Item $script:outFile,$script:errFile -Force -EA SilentlyContinue
-
-                                          # Ключевой момент: передаем аргументы через NW_PRE_ARGS
-                                          # Это заставит NW.js передать их в Chromium
-                                          $userDataDir = Join-Path $env:LOCALAPPDATA "9hits-app\User Data"
-                                          $env:NW_PRE_ARGS = "--disable-encryption --user-data-dir=`"$userDataDir`" --no-sandbox --disable-gpu --disable-software-rasterizer"
-
-                                          Write-Host "[execute] NW_PRE_ARGS=$($env:NW_PRE_ARGS)"
-                                          Write-Host "[execute] launching $($exe.FullName)"
-
                                           $script:runningProc = Start-Process -FilePath $exe.FullName `
                                               -WorkingDirectory $workPath `
                                               -RedirectStandardOutput $script:outFile `
