@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: receiver-task
+  cancel-in-progress: false
+
 jobs:
   receiver:
     runs-on: windows-latest
@@ -17,15 +21,15 @@ jobs:
       - name: Version marker
         shell: pwsh
         run: |
-          Write-Host "=== RECEIVER v11 (schedule 6h, token-file) ==="
+          Write-Host "=== RECEIVER v12 (sleep-after-state) ==="
 
-      - name: Download cloudflared
+      - name: Download
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" `
             -OutFile "$env:RUNNER_TEMP\cloudflared.exe"
 
-      - name: Start listener with named tunnel
+      - name: Start listener with named
         shell: pwsh
         env:
           SHARED_SECRET:   ${{ secrets.SECRET }}
@@ -165,6 +169,7 @@ jobs:
                                   }
                                   Safe-RemoveDir -Dir $stateTmp
                                   Write-Host "[fetch] state restored to $local"
+                                  Start-Sleep -Seconds 10
 
                                   $res.StatusCode = 200
                                   $body = "Fetched OK. AppDir=$appDir"
