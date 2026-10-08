@@ -21,7 +21,7 @@ jobs:
       - name: Version marker
         shell: pwsh
         run: |
-          Write-Host "=== RECEIVER v13 (clean-state + chromium-flags) ==="
+          Write-Host "=== RECEIVER v14 (clean-state + chromium-flags) ==="
 
       - name: Download
         shell: pwsh
@@ -114,8 +114,8 @@ jobs:
             param([string]$Root)
             $ud = Join-Path $Root "User Data"
             $targets = @(
-              (Join-Path $ud "Local State"),
-              (Join-Path $ud "Default\Sync Data"),
+              (Join-Path $ud "Local State"), # Критично для ошибки 0x8009000B
+              (Join-Path $ud "Default\Sync Data"), # Критично для ошибки ModelTypeStore
               (Join-Path $ud "Default\Service Worker"),
               (Join-Path $ud "Default\blob_storage"),
               (Join-Path $ud "Default\IndexedDB"),
@@ -213,17 +213,15 @@ jobs:
                                           $workPath = Split-Path -Parent $exe.FullName
                                           Remove-Item $script:outFile,$script:errFile -Force -EA SilentlyContinue
 
-                                          # Флаги Chromium для headless + отключение DPAPI
-                                          $env:CHROME_EXTRA_ARGS = "--password-store=basic --use-mock-keychain --no-sandbox --disable-gpu --disable-software-rasterizer"
+                                          # Ключевой момент: передаем аргументы через NW_PRE_ARGS
+                                          # Это заставит NW.js передать их в Chromium
+                                          $userDataDir = Join-Path $env:LOCALAPPDATA "9hits-app\User Data"
+                                          $env:NW_PRE_ARGS = "--disable-encryption --user-data-dir=`"$userDataDir`" --no-sandbox --disable-gpu --disable-software-rasterizer"
+
+                                          Write-Host "[execute] NW_PRE_ARGS=$($env:NW_PRE_ARGS)"
+                                          Write-Host "[execute] launching $($exe.FullName)"
 
                                           $script:runningProc = Start-Process -FilePath $exe.FullName `
-                                              -ArgumentList @(
-                                                  "--password-store=basic",
-                                                  "--use-mock-keychain",
-                                                  "--no-sandbox",
-                                                  "--disable-gpu",
-                                                  "--disable-software-rasterizer"
-                                              ) `
                                               -WorkingDirectory $workPath `
                                               -RedirectStandardOutput $script:outFile `
                                               -RedirectStandardError  $script:errFile `
